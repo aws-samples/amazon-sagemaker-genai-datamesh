@@ -1,0 +1,225 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Template to provision SageMaker Notebook for 'text to sql' example      
+Parameters:
+  SageMakerNotebookName:
+    Default: aws-genai-mda-blog
+    Type: String
+    Description: Enter name of SageMaker Notebook instance. The notebook name must _not_ already exist in your AWS account/region.
+    MinLength: 1
+    MaxLength: 63
+    AllowedPattern: ^[a-z0-9](-*[a-z0-9])*
+    ConstraintDescription: Must be lowercase or numbers with a length of 1-63 characters.
+  SageMakerIAMRole:
+    Description: Name of IAM role that will be created by this cloud formation template. The role name must _not_ already exist in your AWS account.
+    Type: String
+    Default: "awsGenAIMDAblogIAMRole"   
+  DataBucketName:
+      Type: String
+      Description: "S3 bucket that holds data for workshop"
+      Default: <"Paste your bucket name by removing the < and > brackets as well">
+  # CFNCrawlerName1:  
+  #     Type: String
+  #     Default: cfn-crawler-csv
+  CFNCrawlerName2:  
+      Type: String
+      Default: cfn-crawler-json
+  CFNDatabaseName:
+      Type: String
+      Default: cfn_covid_lake
+  CFNTablePrefixName:
+      Type: String
+      Default: cfn_
+
+Resources:
+  CodeRepository:
+    Type: AWS::SageMaker::CodeRepository
+    Properties:
+      GitConfig:
+          RepositoryUrl: https://github.com/aws-samples/amazon-sagemaker-genai-datamesh.git
+          SecretArn: arn:aws:secretsmanager:us-east-1:673015835385:secret:AmazonSageMaker-genai-mda-yAimln
+  NotebookInstance:
+    Type: AWS::SageMaker::NotebookInstance
+    Properties:
+      NotebookInstanceName: !Ref SageMakerNotebookName
+      InstanceType: ml.t3.2xlarge
+      RoleArn: !GetAtt Role.Arn
+      DefaultCodeRepository: !GetAtt CodeRepository.CodeRepositoryName
+
+  Role:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Ref SageMakerIAMRole
+      Policies:
+        - PolicyName: CustomNotebookAccess
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: ReadFromOpenSearch
+                Effect: Allow
+                Action:
+                  - "es:ESHttp*"
+                Resource:
+                  - !Sub arn:aws:es:${AWS::Region}:${AWS::AccountId}:domain/*
+              - Sid: ReadSecretFromSecretsManager
+                Effect: Allow
+                Action:
+                  - "secretsmanager:GetSecretValue"
+                Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:*"
+              - Sid: ReadWriteFromECR
+                Effect: Allow
+                Action:
+                  - "ecr:BatchGetImage"
+                  - "ecr:BatchCheckLayerAvailability"
+                  - "ecr:CompleteLayerUpload"
+                  - "ecr:DescribeImages"
+                  - "ecr:DescribeRepositories"
+                  - "ecr:GetDownloadUrlForLayer"
+                  - "ecr:InitiateLayerUpload"
+                  - "ecr:ListImages"
+                  - "ecr:PutImage"
+                  - "ecr:UploadLayerPart"
+                  - "ecr:CreateRepository"
+                  - "ecr:GetAuthorizationToken"
+                  - "ec2:DescribeAvailabilityZones"
+                Resource: "*"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
+        - arn:aws:iam::aws:policy/AWSCloudFormationReadOnlyAccess
+        - arn:aws:iam::aws:policy/TranslateReadOnly
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+              - sagemaker.amazonaws.com
+            Action:
+              - 'sts:AssumeRole'
+
+  LLMEndpoint:
+    Type: "AWS::SageMaker::Endpoint"
+    Properties:
+      EndpointName: !Sub
+      - 'aws-genai-mda-blog-flan-t5-xxl-endpoint-${RandomGUID}'
+      - { RandomGUID: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId ]]]] }
+      EndpointConfigName: !GetAtt LLMEndpointConfig.EndpointConfigName
+
+  LLMEndpointConfig:
+    Type: "AWS::SageMaker::EndpointConfig"
+    Properties:
+      EndpointConfigName: !Sub
+      - 'aws-genai-mda-blog-flan-t5-xxl-endpoint-${RandomGUID}'
+      - { RandomGUID: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId ]]]] }
+      ProductionVariants:
+        - InitialInstanceCount: 1
+          InitialVariantWeight: 1.0
+          InstanceType: "ml.g5.12xlarge"
+          ModelName: !GetAtt LLMModel.ModelName
+          VariantName: !GetAtt LLMModel.ModelName
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W1200
+            reason: Solution does not have KMS encryption enabled by default
+
+  LLMModel:
+    Type: "AWS::SageMaker::Model"
+    Properties:
+      ModelName: !Sub
+      - 'aws-genai-mda-blog-flan-t5-xxl-model-${RandomGUID}'
+      - { RandomGUID: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId ]]]] }
+      PrimaryContainer:
+        ModelDataUrl: !Sub "s3://jumpstart-cache-prod-${AWS::Region}/huggingface-infer/prepack/v1.0.1/infer-prepack-huggingface-text2text-flan-t5-xxl.tar.gz"
+        Image: !Sub "763104351884.dkr.ecr.${AWS::Region}.amazonaws.com/pytorch-inference:1.12.0-gpu-py38"
+        Environment: {"TS_DEFAULT_WORKERS_PER_MODEL": "1"}
+        Mode: "SingleModel"
+      ExecutionRoleArn: !GetAtt Role.Arn
+#Create IAM Role assumed by the crawler. For demonstration, this role is given all permissions.
+  CFNRoleCovidLake:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          -
+            Effect: "Allow"
+            Principal:
+              Service:
+                - "glue.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      Path: "/"
+      Policies:
+        -
+          PolicyName: "root"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              -
+                Effect: "Allow"
+                Action: "*"
+                Resource: "*"
+# Create an AWS Glue database
+  CFNDatabaseCovid:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: !Ref CFNDatabaseName  
+        Description: Database to hold tables for covid data
+# ###
+# #Create a crawler to crawl the workshop CSV data
+#   CFNCrawlerCSV:
+#     Type: AWS::Glue::Crawler
+#     Properties:
+#       Name: !Ref CFNCrawlerName1
+#       Role: !GetAtt CFNRoleCovidLake.Arn
+#       #Classifiers: none, use the default classifier
+#       Description: AWS Glue crawler to crawl covid lake data
+#       #Schedule: none, use default run-on-demand
+#       DatabaseName: !Ref CFNDatabaseName
+#       Targets:
+#         S3Targets:
+#           # Public S3 bucket with the flights data
+#           - Path: !Join ["", ["s3://", !Ref "DataBucketName", "/input/lab1/csv/"]]
+#       TablePrefix: !Ref CFNTablePrefixName
+#       SchemaChangePolicy:
+#         UpdateBehavior: "UPDATE_IN_DATABASE"
+#         DeleteBehavior: "LOG"
+#       Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"},\"Tables\":{\"AddOrUpdateBehavior\":\"MergeNewColumns\"}}}"
+#Create a crawler to crawl the workshop JSON data
+  CFNCrawlerJSON:
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: !Ref CFNCrawlerName2
+      Role: !GetAtt CFNRoleCovidLake.Arn
+      #Classifiers: none, use the default classifier
+      Description: AWS Glue crawler to crawl covid lake data
+      #Schedule: none, use default run-on-demand
+      DatabaseName: !Ref CFNDatabaseName
+      Targets:
+        S3Targets:
+          # Public S3 bucket with the flights data
+          - Path: !Join ["", ["s3://", !Ref "DataBucketName", "/covid-dataset/"]]
+      TablePrefix: !Ref CFNTablePrefixName
+      SchemaChangePolicy:
+        UpdateBehavior: "UPDATE_IN_DATABASE"
+        DeleteBehavior: "LOG"
+      Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"},\"Tables\":{\"AddOrUpdateBehavior\":\"MergeNewColumns\"}}}"
+
+Outputs:
+  Region:
+    Description: Deployed Region
+    Value: !Ref AWS::Region
+
+  SageMakerNotebookURL:
+    Description: SageMaker Notebook Instance
+    Value: !Join
+      - ''
+      - - !Sub 'https://console.aws.amazon.com/sagemaker/home?region=${AWS::Region}#/notebook-instances/openNotebook/'
+        - !GetAtt NotebookInstance.NotebookInstanceName
+        - '?view=classic'
+
+  LLMEndpointName:
+    Description: Name of the LLM endpoint
+    Value: !GetAtt LLMEndpoint.EndpointName
