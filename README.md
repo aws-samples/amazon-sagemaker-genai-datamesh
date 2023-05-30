@@ -15,7 +15,7 @@ The code in this repo is organized into the following sub-folders.
 ├──────/Simple text to sql
 ├── workshop/
 ├──────/TBD
-├── images/```
+├── images/
 
 ## Security
 
