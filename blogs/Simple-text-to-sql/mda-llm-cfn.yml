@@ -54,10 +54,18 @@ Resources:
                 Action:
                   - "secretsmanager:GetSecretValue"
                 Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:*"
+        - PolicyName: s3_access_blog_genai_mda
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: ReadS3Resources
+                Effect: Allow
+                Action:
+                  - "s3:*"
+                Resource: !Join ["",["arn:aws:s3:::",!Ref DataBucketName]]         
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
         - arn:aws:iam::aws:policy/AWSCloudFormationReadOnlyAccess
-        - arn:aws:iam::aws:policy/AmazonS3FullAccess
         - arn:aws:iam::aws:policy/AWSGlueConsoleFullAccess
         - arn:aws:iam::aws:policy/AmazonAthenaFullAccess
       AssumeRolePolicyDocument:
@@ -69,7 +77,6 @@ Resources:
               - sagemaker.amazonaws.com
             Action:
               - 'sts:AssumeRole'
-
   LLMEndpoint:
     Type: "AWS::SageMaker::Endpoint"
     Properties:
@@ -77,7 +84,6 @@ Resources:
       - 'aws-genai-mda-blog-flan-t5-xxl-endpoint-${RandomGUID}'
       - { RandomGUID: !Select [0, !Split ["-", !Select [2, !Split ["/", !Ref AWS::StackId ]]]] }
       EndpointConfigName: !GetAtt LLMEndpointConfig.EndpointConfigName
-
   LLMEndpointConfig:
     Type: "AWS::SageMaker::EndpointConfig"
     Properties:
@@ -95,7 +101,6 @@ Resources:
         rules_to_suppress:
           - id: W1200
             reason: Solution does not have KMS encryption enabled by default
-
   LLMModel:
     Type: "AWS::SageMaker::Model"
     Properties:
@@ -108,7 +113,6 @@ Resources:
         Environment: {"TS_DEFAULT_WORKERS_PER_MODEL": "1"}
         Mode: "SingleModel"
       ExecutionRoleArn: !GetAtt Role.Arn
-#Create IAM Role assumed by the crawler. For demonstration, this role is given all permissions.
   CFNRoleCovidLake:
     Type: AWS::IAM::Role
     Properties:
@@ -124,15 +128,36 @@ Resources:
               - "sts:AssumeRole"
       Path: "/"
       Policies:
-        -
-          PolicyName: "root"
+        - PolicyName: glueaccess_for_crawler
           PolicyDocument:
-            Version: "2012-10-17"
+            Version: 2012-10-17
             Statement:
-              -
-                Effect: "Allow"
-                Action: "*"
-                Resource: "*"
+              - Sid: Readcrawlerresources
+                Effect: Allow
+                Action:
+                  - "glue:*"
+                Resource: 
+                          - !Join ["",[!Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:catalog"]]
+                          - !Join ["",[!Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:database/cfn_covid_lake"]]
+                          - !Join ["",[!Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:table/cfn_covid_lake/*"]]
+        - PolicyName: s3_access_for_crawler
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: ReadS3Resources
+                Effect: Allow
+                Action:
+                  - "s3:*"
+                Resource: !Join ["",["arn:aws:s3:::",!Ref DataBucketName]               ]
+        - PolicyName: logaccess_for_crawler
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Sid: ReadlogResources
+                Effect: Allow
+                Action:
+                  - "logs:*"
+                Resource: "*"  
 # Create an AWS Glue database
   CFNDatabaseCovid:
     Type: AWS::Glue::Database
@@ -160,12 +185,10 @@ Resources:
         UpdateBehavior: "UPDATE_IN_DATABASE"
         DeleteBehavior: "LOG"
       Configuration: "{\"Version\":1.0,\"CrawlerOutput\":{\"Partitions\":{\"AddOrUpdateBehavior\":\"InheritFromTable\"},\"Tables\":{\"AddOrUpdateBehavior\":\"MergeNewColumns\"}}}"
-
 Outputs:
   GlueCrawlerName:
     Description: Glue Crawler Name
     Value: !Ref CFNCrawlerName
-
   SageMakerNotebookURL:
     Description: SageMaker Notebook Instance
     Value: !Join
@@ -173,7 +196,6 @@ Outputs:
       - - !Sub 'https://console.aws.amazon.com/sagemaker/home?region=${AWS::Region}#/notebook-instances/openNotebook/'
         - !GetAtt NotebookInstance.NotebookInstanceName
         - '?view=classic'
-
   LLMEndpointName:
     Description: Name of the LLM endpoint
     Value: !GetAtt LLMEndpoint.EndpointName
