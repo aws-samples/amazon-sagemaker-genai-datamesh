@@ -45,7 +45,7 @@ Resources:
     Properties:
       RoleName: !Ref SageMakerIAMRole
       Policies:
-        - PolicyName: CustomNotebookAccess
+        - PolicyName: CustomNotebookSecretsAccess
           PolicyDocument:
             Version: 2012-10-17
             Statement:
@@ -68,22 +68,10 @@ Resources:
                 Action:
                   - "s3:PutObject"
                 Resource: !Join ["",["arn:aws:s3:::",!Ref DataBucketName,"/*"]] 
-              - Sid: CopyObjectPermission
-                Effect: Allow
-                Action:
-                  - "s3:CopyObject"
-                Resource: !Join ["",["arn:aws:s3:::",!Ref DataBucketName]]                                         
-              - Sid: ReadS3Resources
-                Effect: Allow
-                Action:
-                  - "s3:*"
-                Resource:  
-                        - !Join ["",["arn:aws:s3:::","*/**"]]
-                        - !Join ["",["arn:aws:s3:::",!Ref DataBucketName,"/*"]]   
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
         - arn:aws:iam::aws:policy/AWSCloudFormationReadOnlyAccess
-        - arn:aws:iam::aws:policy/AWSGlueConsoleFullAccess
+        - arn:aws:iam::aws:policy/service-role/AWSGlueServiceRole
         - arn:aws:iam::aws:policy/AmazonAthenaFullAccess
       AssumeRolePolicyDocument:
         Version: 2012-10-17
@@ -175,8 +163,11 @@ Resources:
               - Sid: ReadlogResources
                 Effect: Allow
                 Action:
-                  - "logs:*"
-                Resource: "*"  
+                      - "logs:CreateLogGroup"
+                      - "logs:CreateLogStream"
+                      - "logs:PutLogEvents"
+                Resource: 
+                      - !Join ["",[!Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:log-group:/aws/glue/crawlers*"]]
 # Create an AWS Glue database
   CFNDatabaseCovid:
     Type: AWS::Glue::Database
