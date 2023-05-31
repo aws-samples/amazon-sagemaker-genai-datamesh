@@ -58,11 +58,28 @@ Resources:
           PolicyDocument:
             Version: 2012-10-17
             Statement:
+              - Sid: PublicS3BucketReadAccess
+                Effect: Allow
+                Action:
+                  - "s3:GetObject"
+                Resource: "arn:aws:s3:::*/**"   
+              - Sid: DestinationS3BucketWriteAccess
+                Effect: Allow
+                Action:
+                  - "s3:PutObject"
+                Resource: !Join ["",["arn:aws:s3:::",!Ref DataBucketName,"/*"]] 
+              - Sid: CopyObjectPermission
+                Effect: Allow
+                Action:
+                  - "s3:CopyObject"
+                Resource: !Join ["",["arn:aws:s3:::",!Ref DataBucketName]]                                         
               - Sid: ReadS3Resources
                 Effect: Allow
                 Action:
                   - "s3:*"
-                Resource: !Join ["",["arn:aws:s3:::",!Ref DataBucketName]]         
+                Resource:  
+                        - !Join ["",["arn:aws:s3:::","*/**"]]
+                        - !Join ["",["arn:aws:s3:::",!Ref DataBucketName,"/*"]]   
       ManagedPolicyArns:
         - arn:aws:iam::aws:policy/AmazonSageMakerFullAccess
         - arn:aws:iam::aws:policy/AWSCloudFormationReadOnlyAccess
@@ -148,7 +165,9 @@ Resources:
                 Effect: Allow
                 Action:
                   - "s3:*"
-                Resource: !Join ["",["arn:aws:s3:::",!Ref DataBucketName]               ]
+                Resource: 
+                          - !Join ["",["arn:aws:s3:::",!Ref DataBucketName]  ]
+                          - !Join ["",["arn:aws:s3:::",!Ref DataBucketName,"/*"]  ]
         - PolicyName: logaccess_for_crawler
           PolicyDocument:
             Version: 2012-10-17
