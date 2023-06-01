@@ -152,7 +152,11 @@ Resources:
               - Sid: ReadS3Resources
                 Effect: Allow
                 Action:
-                  - "s3:*"
+                - "s3:PutObject"
+                - "s3:GetObject"
+                - "s3:PutBucketLogging"
+                - "s3:ListBucket"
+                - "s3:PutBucketVersioning"
                 Resource: 
                           - !Join ["",["arn:aws:s3:::",!Ref DataBucketName]  ]
                           - !Join ["",["arn:aws:s3:::",!Ref DataBucketName,"/*"]  ]
@@ -167,7 +171,7 @@ Resources:
                       - "logs:CreateLogStream"
                       - "logs:PutLogEvents"
                 Resource: 
-                      - !Join ["",[!Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:log-group:/aws/glue/crawlers*"]]
+                      - !Join ["",[!Sub "arn:aws:glue:${AWS::Region}:${AWS::AccountId}:log-group:/aws-glue/crawlers*"]]
 # Create an AWS Glue database
   CFNDatabaseCovid:
     Type: AWS::Glue::Database
