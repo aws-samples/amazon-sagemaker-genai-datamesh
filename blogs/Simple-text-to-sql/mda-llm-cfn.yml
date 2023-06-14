@@ -32,7 +32,6 @@ Resources:
     Properties:
       GitConfig:
           RepositoryUrl: https://github.com/aws-samples/amazon-sagemaker-genai-datamesh.git
-          SecretArn: arn:aws:secretsmanager:us-east-1:673015835385:secret:AmazonSageMaker-genai-mda-yAimln
   NotebookInstance:
     Type: AWS::SageMaker::NotebookInstance
     Properties:
